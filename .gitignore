@@ -1,0 +1,14 @@
+# 執行期資料（含 Postgres 資料庫檔案、簽發的憑證），整個資料夾不進版控
+data/
+
+# 選填：只有想自己指定 OPS_TOOLS_MASTER_KEY 才需要建這個檔案（見 README）
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# 雜項
+*.log
+cookies.txt

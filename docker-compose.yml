@@ -1,0 +1,71 @@
+# 明確釘住 compose 專案名稱，不要讓它跟著資料夾名稱變（預設沒寫 name 的話，
+# 專案名稱、named volume 前綴都會用「目前資料夾名稱」自動算出來；之後不管
+# 資料夾改叫什麼，volume 名稱都固定是 opstools_pgdata，不會變成孤兒資料）
+name: opstools
+
+volumes:
+  # Postgres 資料用 named volume（存在 WSL2 VM 自己的 Linux 檔案系統裡），不要改成 bind mount
+  # 到 ./data/postgres：Windows 路徑走 drvfs，不支援 Postgres 需要的 chown/chmod，會導致
+  # initdb 失敗。備份請用 `docker compose exec db pg_dump ...`，不是直接複製這個 volume。
+  pgdata:
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: opstools
+      POSTGRES_USER: opstools
+      # 這個服務完全不對外開 port，只有同一個 compose network 內的 ops-tools 連得到；
+      # 能碰到這個 network 的人等於已經能碰到整台機器，密碼在這裡防不了什麼，所以用
+      # trust（同網段免密碼）簡化設定，不需要使用者另外準備 POSTGRES_PASSWORD
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opstools -d opstools"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  ops-tools:
+    build: .
+    # 只綁宿主機的 127.0.0.1，維持「僅本機能連」的前提；不要改成 "5000:5000"
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      DATABASE_URL: postgresql://opstools@db:5432/opstools
+      # OPS_TOOLS_MASTER_KEY 不用在這裡設定：沒設的話 app 會自動產生一把存到 data/master.key，
+      # 之後都讀同一把。想自己指定金鑰（例如還原備份）才需要在這裡加這個環境變數。
+    volumes:
+      - ./data:/data
+      # 把原始碼掛成 volume，蓋掉 image 裡 COPY 進去的版本：改 app/ 底下的
+      # .py / templates 之後，只要 `docker compose restart ops-tools` 就會生效，
+      # 不用重新 build image；只有改 requirements.txt（新增/更新套件）才需要 --build
+      - ./app:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # 排程自動續期用，預設不會啟動，需要時才手動開：
+  #   docker compose --profile renew up -d ops-tools-renew
+  ops-tools-renew:
+    build: .
+    profiles: ["renew"]
+    environment:
+      DATABASE_URL: postgresql://opstools@db:5432/opstools
+    volumes:
+      - ./data:/data
+      - ./app:/app
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          python cf_cert_renew_all.py
+          sleep 86400
+        done
+    restart: unless-stopped

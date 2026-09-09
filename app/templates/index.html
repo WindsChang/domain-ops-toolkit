@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>Domain Ops Toolkit</title>
+<style>
+    * { box-sizing: border-box; }
+    body { font-family: "Microsoft JhengHei", sans-serif; background: #f2f2f2; margin: 0; }
+    a { color: inherit; }
+
+    .topbar { background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+    .topbar h1 { font-size: 18px; margin: 0; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .whoami { font-size: 12px; color: #888; }
+    .whoami .role { display: inline-block; padding: 1px 6px; border-radius: 8px; background: #f2f2f2; margin-left: 4px; }
+    .logout { font-size: 12px; color: #888; text-decoration: none; }
+
+    .layout { display: flex; align-items: flex-start; gap: 20px; padding: 20px 24px; max-width: 1100px; margin: 0 auto; }
+
+    .sidebar { width: 200px; flex-shrink: 0; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 10px; position: sticky; top: 20px; }
+    .nav-group { margin-bottom: 4px; }
+    .nav-group-toggle { width: 100%; text-align: left; background: none; border: none; padding: 8px 6px; font-size: 13px; font-weight: bold; color: #333; cursor: pointer; display: flex; align-items: center; gap: 6px; border-radius: 4px; }
+    .nav-group-toggle:hover { background: #f2f2f2; }
+    .nav-group-toggle .chevron { display: inline-block; transition: transform 0.15s; font-size: 10px; }
+    .nav-group.collapsed .chevron { transform: rotate(-90deg); }
+    .nav-group-items { display: flex; flex-direction: column; }
+    .nav-group.collapsed .nav-group-items { display: none; }
+    .nav-item { text-align: left; background: none; border: none; padding: 8px 10px 8px 26px; font-size: 13px; color: #555; cursor: pointer; border-radius: 4px; white-space: nowrap; }
+    .nav-item:hover { background: #f2f2f2; }
+    .nav-item.active { background: #fdece0; color: #f6821f; font-weight: bold; }
+
+    .content { flex: 1; min-width: 0; }
+    .page { display: flex; flex-direction: column; gap: 20px; }
+    .page[hidden] { display: none; }
+
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 24px; }
+    h2 { font-size: 15px; margin: 0 0 12px; }
+    .section { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    input[type="text"], input[type="password"] { padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+    input.domain { width: 260px; }
+    input.content { width: 200px; }
+    select { padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+    textarea.domain-list { width: 100%; max-width: 420px; padding: 8px; font-size: 14px; font-family: inherit; border: 1px solid #ccc; border-radius: 4px; resize: vertical; }
+    label.checkbox { font-size: 13px; color: #555; display: flex; align-items: center; gap: 4px; }
+    .account-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    button { padding: 10px 18px; background: #f6821f; color: #fff; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+    button.secondary { background: #888; padding: 6px 12px; font-size: 12px; }
+    button.danger { background: #c0392b; }
+    button:hover:not(:disabled) { background: #d96f14; }
+    button.secondary:hover:not(:disabled) { background: #666; }
+    button.danger:hover:not(:disabled) { background: #962d22; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    a.secondary-link { display: inline-block; padding: 4px 10px; font-size: 12px; background: #888; color: #fff; border-radius: 4px; text-decoration: none; }
+    a.secondary-link:hover { background: #666; }
+    #status { color: #555; font-size: 13px; }
+    #log { background: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace; font-size: 13px; padding: 12px; height: 380px; overflow-y: auto; border-radius: 4px; white-space: pre-wrap; }
+    .hint { font-size: 12px; color: #888; margin: -4px 0 8px; }
+    table.certs { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.certs th, table.certs td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+    table.certs button { padding: 4px 10px; font-size: 12px; }
+    .badge { padding: 2px 8px; border-radius: 10px; font-size: 12px; color: #fff; }
+    .badge.ok { background: #2ea044; }
+    .badge.warn { background: #e08e0b; }
+    .badge.expired { background: #c0392b; }
+    .empty-hint { font-size: 13px; color: #999; }
+</style>
+</head>
+<body>
+    <div class="topbar">
+        <h1>Domain Ops Toolkit（共 {{ account_count }} 組帳號）</h1>
+        <div class="topbar-right">
+            <span class="whoami">{{ username }}<span class="role">{{ role }}</span></span>
+            <a class="logout" href="/logout">登出</a>
+        </div>
+    </div>
+
+    <div class="layout">
+        <aside class="sidebar">
+            <nav>
+                <div class="nav-group" id="navGroup-cdn">
+                    <button type="button" class="nav-group-toggle" onclick="toggleGroup('navGroup-cdn')">
+                        <span class="chevron">▾</span>CDN
+                    </button>
+                    <div class="nav-group-items">
+                        <button type="button" class="nav-item active" data-page="page-cloudflare" onclick="showPage('page-cloudflare', this)">Cloudflare</button>
+                    </div>
+                </div>
+                <div class="nav-group" id="navGroup-cert">
+                    <button type="button" class="nav-group-toggle" onclick="toggleGroup('navGroup-cert')">
+                        <span class="chevron">▾</span>憑證
+                    </button>
+                    <div class="nav-group-items">
+                        <button type="button" class="nav-item" data-page="page-cert" onclick="showPage('page-cert', this)">憑證簽發</button>
+                        <button type="button" class="nav-item" data-page="page-cert-download" onclick="showPage('page-cert-download', this)">憑證下載</button>
+                    </div>
+                </div>
+                {% if is_admin %}
+                <div class="nav-group" id="navGroup-admin">
+                    <button type="button" class="nav-group-toggle" onclick="toggleGroup('navGroup-admin')">
+                        <span class="chevron">▾</span>系統管理
+                    </button>
+                    <div class="nav-group-items">
+                        <button type="button" class="nav-item" data-page="page-users" onclick="showPage('page-users', this)">使用者管理</button>
+                        <button type="button" class="nav-item" data-page="page-cf-accounts" onclick="showPage('page-cf-accounts', this)">CF 帳號管理</button>
+                    </div>
+                </div>
+                {% endif %}
+                <div class="nav-group" id="navGroup-account">
+                    <button type="button" class="nav-group-toggle" onclick="toggleGroup('navGroup-account')">
+                        <span class="chevron">▾</span>帳號設定
+                    </button>
+                    <div class="nav-group-items">
+                        <button type="button" class="nav-item" data-page="page-change-password" onclick="showPage('page-change-password', this)">修改密碼</button>
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <div class="page" id="page-cloudflare">
+                <div class="card">
+                    <h2>建立 Zone</h2>
+                    <div class="hint">把一個網域新增到 Cloudflare（zone 一律是註冊主體網域，例如輸入 <code>sub.example.com</code> 也會建立 <code>example.com</code> 這個 zone）。建立後 Cloudflare 會指派新的 NS，執行紀錄會顯示，需要自己到網域註冊商把該網域的 NS 改成 Cloudflare 指派的，改完並等 DNS 生效後這個網域才算真的走 Cloudflare</div>
+                    <div class="section">
+                        <input class="domain" type="text" id="zoneCreateDomain" placeholder="網域，例如 example.com">
+                        <select id="zoneCreateAccount">
+                            {% for acc in accounts %}
+                            <option value="{{ acc.name }}">{{ acc.name }}（{{ acc.email }}）</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="section">
+                        <label class="checkbox"><input type="checkbox" id="zoneCreateJumpStart" checked> 自動掃描匯入現有 DNS 紀錄（不保證完整或正確，建立後請自行核對）</label>
+                        {% if role in ('admin', 'operator') %}
+                        <button onclick="startJob('/api/zone/create', {domain: val('zoneCreateDomain'), account_name: document.getElementById('zoneCreateAccount').value, jump_start: document.getElementById('zoneCreateJumpStart').checked ? 'on' : ''})">建立 Zone</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>刪除 Zone</h2>
+                    <div class="hint">⚠️ 這是把整個網域從 Cloudflare 移除，連同底下所有 DNS 紀錄、Page Rule、SSL 設定等一併刪除，<strong>無法復原</strong>；會依目前的 NS 自動比對所屬帳號，僅限 <code>admin</code> 執行</div>
+                    <div class="section">
+                        <input class="domain" type="text" id="zoneDeleteDomain" placeholder="網域，例如 example.com">
+                        {% if role == 'admin' %}
+                        <button class="danger" onclick="deleteZone()">刪除 Zone</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>清除快取</h2>
+                    <div class="hint">預設全選＝清除全部帳號快取；取消勾選則只清除有勾選的帳號</div>
+                    <div class="section">
+                        <button type="button" class="secondary" onclick="toggleAllAccounts(true)">全選</button>
+                        <button type="button" class="secondary" onclick="toggleAllAccounts(false)">全不選</button>
+                    </div>
+                    <div class="account-list">
+                        {% for acc in accounts %}
+                        <label class="checkbox"><input type="checkbox" class="account-checkbox" value="{{ loop.index0 }}" checked> {{ acc.name }}（{{ acc.email }}）</label>
+                        {% endfor %}
+                    </div>
+                    {% if role in ('admin', 'operator') %}
+                    <div class="section">
+                        <button onclick="startJob('/api/purge-accounts', {account_index: getCheckedAccounts()})">清除已勾選帳號的快取</button>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="card">
+                    <h2>依網域清除快取</h2>
+                    <div class="hint">輸入網域（會依 NS 自動比對出所屬帳號），只清除該網域所在 zone 的快取</div>
+                    <div class="section">
+                        <input class="domain" type="text" id="purgeDomain" placeholder="例如 example.com 或 sub.example.com">
+                        {% if role in ('admin', 'operator') %}
+                        <button onclick="startJob('/api/purge-domain', {domain: val('purgeDomain')})">清除該網域快取</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>新增子網域</h2>
+                    <div class="hint">每行輸入「網域,內容」，可一次新增多個網域（同一批共用下面選的類型 / Proxied 設定）。新增前會先刪除同名同類型的舊紀錄，避免解析本來就存在造成衝突；逐筆處理並間隔一段時間，單次最多 50 筆，避免觸發 Cloudflare 流量限制</div>
+                    <div class="section" style="align-items: flex-start;">
+                        <textarea class="domain-list" id="addEntries" rows="4" placeholder="每行「網域,內容」，例如：&#10;test1.example.com,1.2.3.4&#10;test2.example.com,5.6.7.8"></textarea>
+                    </div>
+                    <div class="section">
+                        <select id="addType">
+                            <option value="A">A</option>
+                            <option value="AAAA">AAAA</option>
+                            <option value="CNAME">CNAME</option>
+                            <option value="TXT">TXT</option>
+                            <option value="MX">MX</option>
+                        </select>
+                        <label class="checkbox"><input type="checkbox" id="addProxied" checked> Proxied（橘雲，僅 A/AAAA/CNAME 有效）</label>
+                        {% if role in ('admin', 'operator') %}
+                        <button onclick="startJob('/api/dns/add-batch', {entries: val('addEntries'), type: val('addType'), proxied: document.getElementById('addProxied').checked ? 'on' : ''})">批次新增（先刪衝突紀錄再新增）</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>刪除子網域</h2>
+                    <div class="hint">每行輸入一個網域，先查詢該網域目前所有 DNS 紀錄（不用自己填類型或內容），再從查詢結果勾選要刪除的紀錄；查詢與刪除都逐筆處理、單次最多 50 個網域，避免觸發 Cloudflare 流量限制</div>
+                    <div class="section" style="align-items: flex-start;">
+                        <textarea class="domain-list" id="delDomains" rows="3" placeholder="每行一個網域，例如：&#10;test1.example.com&#10;test2.example.com"></textarea>
+                    </div>
+                    <div class="section">
+                        <button type="button" onclick="queryDnsRecords()">查詢 DNS 紀錄</button>
+                    </div>
+
+                    <table class="certs" id="dnsRecordsTable" hidden>
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>網域</th><th>類型</th><th>內容</th><th>Proxied</th><th>帳號</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dnsRecordsTableBody"></tbody>
+                    </table>
+                    <div class="empty-hint" id="dnsRecordsEmptyHint">尚未查詢，或查詢結果沒有任何紀錄</div>
+
+                    <div class="section" id="dnsRecordsActions" hidden style="margin-top: 12px;">
+                        <button type="button" class="secondary" onclick="toggleAllDnsRecords(true)">全選</button>
+                        <button type="button" class="secondary" onclick="toggleAllDnsRecords(false)">全不選</button>
+                        {% if role in ('admin', 'operator') %}
+                        <button onclick="deleteDnsRecordsBatch()">刪除已勾選的紀錄</button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>強制 HTTPS</h2>
+                    <div class="hint">每行輸入一個網域，開啟後該網域所有 HTTP 請求會自動轉跳 HTTPS（Cloudflare 的 Always Use HTTPS 設定，對整個 zone 生效）；逐筆處理、單次最多 50 個網域</div>
+                    <div class="section" style="align-items: flex-start;">
+                        <textarea class="domain-list" id="httpsDomains" rows="3" placeholder="每行一個網域，例如：&#10;example.com&#10;www.example.com"></textarea>
+                    </div>
+                    {% if role in ('admin', 'operator') %}
+                    <div class="section">
+                        <button onclick="startJob('/api/zone/always-https', {domains: val('httpsDomains'), enabled: 'on'})">開啟強制 HTTPS</button>
+                        <button type="button" class="secondary" onclick="startJob('/api/zone/always-https', {domains: val('httpsDomains'), enabled: ''})">關閉強制 HTTPS</button>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="card">
+                    <h2>Page Rule 設置</h2>
+                    <div class="hint">每行輸入「網域,URL Pattern」，可一次對多個網域新增（同一批共用下面選的動作／優先序／狀態設定）；URL Pattern 用 Cloudflare 的萬用字元格式，例如 <code>example.com/old/*</code>；免費方案每個 zone 最多 3 條 Page Rule，超過會直接被 Cloudflare 拒絕；逐筆處理、單次最多 50 筆</div>
+                    <div class="section" style="align-items: flex-start;">
+                        <textarea class="domain-list" id="prEntries" rows="3" placeholder="每行「網域,URL Pattern」，例如：&#10;example.com,example.com/old/*&#10;other.com,other.com/old/*"></textarea>
+                    </div>
+                    <div class="section">
+                        <select id="prActionType" onchange="onPageRuleActionChange()">
+                            <option value="forwarding_url">網址轉發</option>
+                            <option value="always_use_https">強制 HTTPS</option>
+                            <option value="cache_level">快取層級</option>
+                            <option value="security_level">安全性等級</option>
+                        </select>
+                        <select id="prPriority">
+                            <option value="1">優先序 1</option>
+                            <option value="2">優先序 2</option>
+                            <option value="3">優先序 3</option>
+                            <option value="4">優先序 4</option>
+                            <option value="5">優先序 5</option>
+                        </select>
+                        <select id="prStatus">
+                            <option value="active">啟用</option>
+                            <option value="disabled">停用</option>
+                        </select>
+                    </div>
+                    <div class="section" id="prParamsForwarding">
+                        <input class="content" type="text" id="prTargetUrl" placeholder="目標網址，例如 https://example.com/new/$1" style="width: 320px;">
+                        <select id="prStatusCode">
+                            <option value="301">301（永久）</option>
+                            <option value="302">302（暫時）</option>
+                        </select>
+                    </div>
+                    <div class="section" id="prParamsCacheLevel" hidden>
+                        <select id="prCacheLevel">
+                            <option value="bypass">Bypass（不快取）</option>
+                            <option value="basic">Basic</option>
+                            <option value="simplified">Simplified</option>
+                            <option value="aggressive">Aggressive</option>
+                            <option value="cache_everything">Cache Everything（全部快取）</option>
+                        </select>
+                    </div>
+                    <div class="section" id="prParamsSecurityLevel" hidden>
+                        <select id="prSecurityLevel">
+                            <option value="off">Off</option>
+                            <option value="essentially_off">Essentially Off</option>
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="under_attack">Under Attack</option>
+                        </select>
+                    </div>
+                    {% if role in ('admin', 'operator') %}
+                    <div class="section">
+                        <button onclick="createPageRule()">新增 Page Rule</button>
+                    </div>
+                    {% endif %}
+
+                    <div class="section" style="margin-top: 8px;">
+                        <input class="domain" type="text" id="prQueryDomain" placeholder="網域，例如 example.com">
+                        <button type="button" onclick="queryPageRules()">查詢這個網域的 Page Rules</button>
+                    </div>
+
+                    <table class="certs" id="pageRulesTable" hidden>
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>URL Pattern</th><th>動作</th><th>優先序</th><th>狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pageRulesTableBody"></tbody>
+                    </table>
+                    <div class="empty-hint" id="pageRulesEmptyHint">尚未查詢，或查詢結果沒有任何 Page Rule</div>
+
+                    <div class="section" id="pageRulesActions" hidden style="margin-top: 12px;">
+                        <button type="button" class="secondary" onclick="toggleAllPageRules(true)">全選</button>
+                        <button type="button" class="secondary" onclick="toggleAllPageRules(false)">全不選</button>
+                        {% if role in ('admin', 'operator') %}
+                        <button onclick="deletePageRulesBatch()">刪除已勾選的 Page Rule</button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="page" id="page-cert" hidden>
+                <div class="card">
+                    <h2>申請 / 續期 Let's Encrypt 憑證</h2>
+                    <div class="hint">每行輸入一個網域，可一次簽發多網域 (SAN) 憑證；會依 NS 自動比對各網域所屬帳號，透過 DNS-01 驗證簽發，只會產生檔案到 certs/ 資料夾，不會部署到任何地方</div>
+                    <div class="section" style="align-items: flex-start;">
+                        <textarea class="domain-list" id="certDomain" rows="3" placeholder="每行一個網域，例如：&#10;example.com&#10;www.example.com"></textarea>
+                    </div>
+                    <div class="section">
+                        <label class="checkbox"><input type="checkbox" id="certStaging" checked> 測試模式（staging，不計入正式額度，但瀏覽器不會信任）</label>
+                        {% if role in ('admin', 'operator') %}
+                        <button onclick="startJob('/api/cert/issue', {domain: val('certDomain'), staging: document.getElementById('certStaging').checked ? 'on' : ''})">簽發憑證</button>
+                        {% endif %}
+                    </div>
+
+                    <table class="certs" id="certsTable" hidden>
+                        <thead>
+                            <tr><th>網域</th><th>到期日</th><th>狀態</th><th></th></tr>
+                        </thead>
+                        <tbody id="certsTableBody"></tbody>
+                    </table>
+                    <div class="empty-hint" id="certsEmptyHint">目前沒有已簽發的憑證</div>
+                </div>
+            </div>
+
+            <div class="page" id="page-cert-download" hidden>
+                <div class="card">
+                    <h2>憑證下載</h2>
+                    <div class="hint">列出所有已簽發過的憑證，可下載 fullchain.pem + privkey.pem 打包的 zip，或手動刪除不再需要的憑證資料夾（無法復原）</div>
+                    <table class="certs" id="certsDownloadTable" hidden>
+                        <thead>
+                            <tr><th>憑證主體名稱（CN）</th><th>主體別名（SAN，即簽發過的所有網域）</th><th>到期日</th><th>狀態</th><th></th></tr>
+                        </thead>
+                        <tbody id="certsDownloadTableBody"></tbody>
+                    </table>
+                    <div class="empty-hint" id="certsDownloadEmptyHint">目前沒有已簽發的憑證</div>
+                </div>
+            </div>
+
+            {% if is_admin %}
+            <div class="page" id="page-users" hidden>
+                <div class="card">
+                    <h2>使用者管理</h2>
+                    <div class="hint">admin：所有功能都能用，含使用者/CF 帳號管理；operator：能執行清除快取/DNS/憑證等操作；readonly：只能查看，不能執行任何操作</div>
+                    <table class="certs" id="usersTable">
+                        <thead><tr><th>帳號</th><th>角色</th><th>密碼狀態</th><th>建立時間</th><th></th></tr></thead>
+                        <tbody id="usersTableBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h2>新增使用者</h2>
+                    <div class="section">
+                        <input class="domain" type="text" id="newUsername" placeholder="帳號">
+                        <input class="content" type="password" id="newUserPassword" placeholder="密碼">
+                        <select id="newUserRole">
+                            <option value="admin">admin</option>
+                            <option value="operator" selected>operator</option>
+                            <option value="readonly">readonly</option>
+                        </select>
+                        <button onclick="createUser()">新增使用者</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="page" id="page-cf-accounts" hidden>
+                <div class="card">
+                    <h2>CF 帳號管理</h2>
+                    <div class="hint">Cloudflare 帳號存在資料庫，API Key 加密後才寫入</div>
+                    <table class="certs" id="cfAccountsTable">
+                        <thead><tr><th>名稱</th><th>Email</th><th>NS</th><th></th></tr></thead>
+                        <tbody id="cfAccountsTableBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="card">
+                    <h2 id="cfAccountFormTitle">新增 CF 帳號</h2>
+                    <div class="section">
+                        <input class="domain" type="text" id="newCfName" placeholder="名稱（自己辨識用）">
+                        <input class="domain" type="text" id="newCfEmail" placeholder="Cloudflare 登入 Email">
+                    </div>
+                    <div class="section">
+                        <input class="content" type="text" id="newCfApiKey" placeholder="Global API Key" style="width: 320px;">
+                    </div>
+                    <div class="section" style="align-items: flex-start;">
+                        <textarea class="domain-list" id="newCfNs" rows="2" placeholder="NS，每行一筆（選填，指定網域清除快取/新增刪除子網域才需要），例如：&#10;xxx.ns.cloudflare.com&#10;yyy.ns.cloudflare.com"></textarea>
+                    </div>
+                    <div class="section">
+                        <button onclick="submitCfAccount()" id="cfAccountSubmitBtn">新增帳號</button>
+                        <button type="button" class="secondary" onclick="cancelEditCfAccount()" id="cfAccountCancelBtn" hidden>取消編輯</button>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="page" id="page-change-password" hidden>
+                <div class="card">
+                    <h2>修改密碼</h2>
+                    <div class="hint">改完後這個瀏覽器分頁的登入狀態不受影響，不用重新登入</div>
+                    <div class="section">
+                        <input class="content" type="password" id="oldPassword" placeholder="目前密碼">
+                    </div>
+                    <div class="section">
+                        <input class="content" type="password" id="newPassword" placeholder="新密碼（至少 8 個字元）">
+                        <input class="content" type="password" id="confirmPassword" placeholder="再輸入一次新密碼">
+                    </div>
+                    <div class="section">
+                        <button onclick="changePassword()">更新密碼</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="logCard">
+                <div class="section" style="justify-content: space-between;">
+                    <h2 style="margin:0;">執行紀錄</h2>
+                    <span id="status">就緒</span>
+                </div>
+                <div id="log"></div>
+            </div>
+        </main>
+    </div>
+
+<script>
+const CURRENT_ROLE = {{ role|tojson }};
+const CAN_ACT = CURRENT_ROLE === 'admin' || CURRENT_ROLE === 'operator';
+
+let offset = 0;
+let polling = null;
+
+function val(id) {
+    return document.getElementById(id).value.trim();
+}
+
+function toggleGroup(groupId) {
+    document.getElementById(groupId).classList.toggle('collapsed');
+}
+
+// 這幾個頁面的操作都是同步 API（新增/刪除/修改密碼），不會透過背景工作寫執行紀錄，顯示了也永遠是空的
+const PAGES_WITHOUT_LOG = ['page-users', 'page-cf-accounts', 'page-change-password'];
+
+function showPage(pageId, navEl) {
+    document.querySelectorAll('.page').forEach(p => p.hidden = (p.id !== pageId));
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b === navEl));
+    document.getElementById('logCard').hidden = PAGES_WITHOUT_LOG.includes(pageId);
+}
+
+function toggleAllAccounts(checked) {
+    document.querySelectorAll('.account-checkbox').forEach(cb => cb.checked = checked);
+}
+
+function getCheckedAccounts() {
+    return Array.from(document.querySelectorAll('.account-checkbox:checked')).map(cb => cb.value);
+}
+
+function appendLog(lines) {
+    const logEl = document.getElementById('log');
+    for (const line of lines) {
+        logEl.textContent += line + "\n";
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setButtonsDisabled(disabled) {
+    document.querySelectorAll('button').forEach(b => b.disabled = disabled);
+}
+
+async function pollLogs() {
+    const resp = await fetch(`/api/logs?since=${offset}`);
+    const data = await resp.json();
+    if (data.lines.length > 0) {
+        appendLog(data.lines);
+        offset = data.next_offset;
+    }
+    document.getElementById('status').textContent = data.running ? '執行中...' : '完成';
+    setButtonsDisabled(data.running);
+    if (!data.running && polling) {
+        clearInterval(polling);
+        polling = null;
+        loadCertList();
+        loadCertDownloadList();
+    }
+}
+
+function renewCert(domains) {
+    document.getElementById('certDomain').value = domains.join('\n');
+    startJob('/api/cert/issue', {
+        domain: domains.join('\n'),
+        staging: document.getElementById('certStaging').checked ? 'on' : ''
+    });
+}
+
+async function loadCertList() {
+    const resp = await fetch('/api/cert/list');
+    const data = await resp.json();
+    if (!data.ok) return;
+
+    const table = document.getElementById('certsTable');
+    const emptyHint = document.getElementById('certsEmptyHint');
+    const tbody = document.getElementById('certsTableBody');
+    tbody.innerHTML = '';
+
+    if (data.certs.length === 0) {
+        table.hidden = true;
+        emptyHint.hidden = false;
+        return;
+    }
+    table.hidden = false;
+    emptyHint.hidden = true;
+
+    for (const cert of data.certs) {
+        let badgeClass = 'ok';
+        let badgeText = `剩 ${cert.days_left} 天`;
+        if (cert.days_left < 0) {
+            badgeClass = 'expired';
+            badgeText = '已過期';
+        } else if (cert.days_left <= 30) {
+            badgeClass = 'warn';
+        }
+
+        const tr = document.createElement('tr');
+
+        const tdDomains = document.createElement('td');
+        tdDomains.textContent = cert.domains.join('、');
+        tr.appendChild(tdDomains);
+
+        const tdNotAfter = document.createElement('td');
+        tdNotAfter.textContent = cert.not_after;
+        tr.appendChild(tdNotAfter);
+
+        const tdBadge = document.createElement('td');
+        tdBadge.innerHTML = `<span class="badge ${badgeClass}">${badgeText}</span>`;
+        tr.appendChild(tdBadge);
+
+        const tdAction = document.createElement('td');
+        if (CAN_ACT) {
+            const renewBtn = document.createElement('button');
+            renewBtn.type = 'button';
+            renewBtn.className = 'secondary';
+            renewBtn.textContent = '續期';
+            renewBtn.addEventListener('click', () => renewCert(cert.domains));
+            tdAction.appendChild(renewBtn);
+        }
+        tr.appendChild(tdAction);
+
+        tbody.appendChild(tr);
+    }
+}
+
+async function deleteCert(hostname, label) {
+    if (!confirm(`確定要刪除憑證「${label}」嗎？此動作無法復原。`)) return;
+
+    const body = new URLSearchParams();
+    body.append('hostname', hostname);
+    const resp = await fetch('/api/cert/delete', { method: 'POST', body });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    loadCertList();
+    loadCertDownloadList();
+}
+
+async function loadCertDownloadList() {
+    const resp = await fetch('/api/cert/list');
+    const data = await resp.json();
+    if (!data.ok) return;
+
+    const table = document.getElementById('certsDownloadTable');
+    const emptyHint = document.getElementById('certsDownloadEmptyHint');
+    const tbody = document.getElementById('certsDownloadTableBody');
+    tbody.innerHTML = '';
+
+    if (data.certs.length === 0) {
+        table.hidden = true;
+        emptyHint.hidden = false;
+        return;
+    }
+    table.hidden = false;
+    emptyHint.hidden = true;
+
+    for (const cert of data.certs) {
+        let badgeClass = 'ok';
+        let badgeText = `剩 ${cert.days_left} 天`;
+        if (cert.days_left < 0) {
+            badgeClass = 'expired';
+            badgeText = '已過期';
+        } else if (cert.days_left <= 30) {
+            badgeClass = 'warn';
+        }
+
+        const tr = document.createElement('tr');
+
+        const tdCn = document.createElement('td');
+        tdCn.textContent = cert.common_name;
+        tr.appendChild(tdCn);
+
+        const tdSan = document.createElement('td');
+        tdSan.textContent = cert.domains.join('、');
+        tr.appendChild(tdSan);
+
+        const tdNotAfter = document.createElement('td');
+        tdNotAfter.textContent = cert.not_after;
+        tr.appendChild(tdNotAfter);
+
+        const tdBadge = document.createElement('td');
+        tdBadge.innerHTML = `<span class="badge ${badgeClass}">${badgeText}</span>`;
+        tr.appendChild(tdBadge);
+
+        const tdAction = document.createElement('td');
+
+        if (CAN_ACT) {
+            const downloadLink = document.createElement('a');
+            downloadLink.className = 'secondary-link';
+            downloadLink.textContent = '下載';
+            downloadLink.href = `/api/cert/download/${encodeURIComponent(cert.hostname)}`;
+            tdAction.appendChild(downloadLink);
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.type = 'button';
+            deleteBtn.className = 'secondary';
+            deleteBtn.style.marginLeft = '6px';
+            deleteBtn.textContent = '刪除';
+            deleteBtn.addEventListener('click', () => deleteCert(cert.hostname, cert.domains.join('、')));
+            tdAction.appendChild(deleteBtn);
+        }
+
+        tr.appendChild(tdAction);
+        tbody.appendChild(tr);
+    }
+}
+
+async function loadUsers() {
+    const resp = await fetch('/api/admin/users');
+    const data = await resp.json();
+    if (!data.ok) return;
+
+    const tbody = document.getElementById('usersTableBody');
+    tbody.innerHTML = '';
+    for (const u of data.users) {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td'); tdName.textContent = u.username; tr.appendChild(tdName);
+        const tdRole = document.createElement('td'); tdRole.textContent = u.role; tr.appendChild(tdRole);
+        const tdPwStatus = document.createElement('td');
+        tdPwStatus.innerHTML = u.must_change_password
+            ? '<span class="badge warn">尚未設定</span>'
+            : '<span class="badge ok">已設定</span>';
+        tr.appendChild(tdPwStatus);
+        const tdCreated = document.createElement('td'); tdCreated.textContent = u.created_at; tr.appendChild(tdCreated);
+
+        const tdAction = document.createElement('td');
+        if (u.username !== 'admin') {
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'secondary';
+            delBtn.textContent = '刪除';
+            delBtn.addEventListener('click', () => deleteUser(u.id, u.username));
+            tdAction.appendChild(delBtn);
+        }
+        tr.appendChild(tdAction);
+
+        tbody.appendChild(tr);
+    }
+}
+
+async function createUser() {
+    const username = val('newUsername');
+    const password = val('newUserPassword');
+    const role = document.getElementById('newUserRole').value;
+    if (!username || !password) {
+        alert('請輸入帳號與密碼');
+        return;
+    }
+
+    const body = new URLSearchParams();
+    body.append('username', username);
+    body.append('password', password);
+    body.append('role', role);
+    const resp = await fetch('/api/admin/users', { method: 'POST', body });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    document.getElementById('newUsername').value = '';
+    document.getElementById('newUserPassword').value = '';
+    loadUsers();
+}
+
+async function deleteUser(id, username) {
+    if (!confirm(`確定要刪除使用者「${username}」嗎？`)) return;
+    const resp = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    loadUsers();
+}
+
+let editingAccountId = null;
+
+async function loadCfAccounts() {
+    const resp = await fetch('/api/admin/cf-accounts');
+    const data = await resp.json();
+    if (!data.ok) return;
+
+    const tbody = document.getElementById('cfAccountsTableBody');
+    tbody.innerHTML = '';
+    for (const acc of data.accounts) {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td'); tdName.textContent = acc.name; tr.appendChild(tdName);
+        const tdEmail = document.createElement('td'); tdEmail.textContent = acc.email; tr.appendChild(tdEmail);
+        const tdNs = document.createElement('td'); tdNs.textContent = (acc.ns || []).join('、'); tr.appendChild(tdNs);
+
+        const tdAction = document.createElement('td');
+        const editBtn = document.createElement('button');
+        editBtn.type = 'button';
+        editBtn.className = 'secondary';
+        editBtn.textContent = '編輯';
+        editBtn.addEventListener('click', () => startEditCfAccount(acc));
+        tdAction.appendChild(editBtn);
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'secondary';
+        delBtn.style.marginLeft = '6px';
+        delBtn.textContent = '刪除';
+        delBtn.addEventListener('click', () => deleteCfAccount(acc.id, acc.name));
+        tdAction.appendChild(delBtn);
+
+        tr.appendChild(tdAction);
+        tbody.appendChild(tr);
+    }
+}
+
+function startEditCfAccount(acc) {
+    editingAccountId = acc.id;
+    document.getElementById('newCfName').value = acc.name;
+    document.getElementById('newCfEmail').value = acc.email;
+    document.getElementById('newCfNs').value = (acc.ns || []).join('\n');
+    document.getElementById('newCfApiKey').value = '';
+    document.getElementById('newCfApiKey').placeholder = '留空 = 不變更目前的 API Key';
+    document.getElementById('cfAccountFormTitle').textContent = `編輯 CF 帳號：${acc.name}`;
+    document.getElementById('cfAccountSubmitBtn').textContent = '儲存變更';
+    document.getElementById('cfAccountCancelBtn').hidden = false;
+}
+
+function cancelEditCfAccount() {
+    editingAccountId = null;
+    document.getElementById('newCfName').value = '';
+    document.getElementById('newCfEmail').value = '';
+    document.getElementById('newCfNs').value = '';
+    document.getElementById('newCfApiKey').value = '';
+    document.getElementById('newCfApiKey').placeholder = 'Global API Key';
+    document.getElementById('cfAccountFormTitle').textContent = '新增 CF 帳號';
+    document.getElementById('cfAccountSubmitBtn').textContent = '新增帳號';
+    document.getElementById('cfAccountCancelBtn').hidden = true;
+}
+
+async function submitCfAccount() {
+    const name = val('newCfName');
+    const email = val('newCfEmail');
+    const apiKey = val('newCfApiKey');
+    const ns = val('newCfNs');
+    if (!name || !email) {
+        alert('請輸入名稱與 Email');
+        return;
+    }
+    if (!editingAccountId && !apiKey) {
+        alert('請輸入 API Key');
+        return;
+    }
+
+    const body = new URLSearchParams();
+    body.append('name', name);
+    body.append('email', email);
+    body.append('api_key', apiKey);
+    body.append('ns', ns);
+
+    const url = editingAccountId ? `/api/admin/cf-accounts/${editingAccountId}` : '/api/admin/cf-accounts';
+    const method = editingAccountId ? 'PUT' : 'POST';
+    const resp = await fetch(url, { method, body });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    cancelEditCfAccount();
+    loadCfAccounts();
+}
+
+async function deleteCfAccount(id, name) {
+    if (!confirm(`確定要刪除 CF 帳號「${name}」嗎？此動作無法復原，且會影響用到這組帳號的網域操作。`)) return;
+    const resp = await fetch(`/api/admin/cf-accounts/${id}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    loadCfAccounts();
+}
+
+async function changePassword() {
+    const oldPassword = val('oldPassword');
+    const newPassword = val('newPassword');
+    const confirmPassword = val('confirmPassword');
+    if (!oldPassword || !newPassword || !confirmPassword) {
+        alert('請填寫所有欄位');
+        return;
+    }
+    if (newPassword !== confirmPassword) {
+        alert('兩次輸入的新密碼不一致');
+        return;
+    }
+
+    const body = new URLSearchParams();
+    body.append('old_password', oldPassword);
+    body.append('new_password', newPassword);
+    body.append('confirm_password', confirmPassword);
+    const resp = await fetch('/api/change-password', { method: 'POST', body });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    document.getElementById('oldPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    alert('密碼已更新');
+}
+
+function deleteZone() {
+    const domain = val('zoneDeleteDomain');
+    if (!domain) {
+        alert('請輸入網域');
+        return;
+    }
+    const typed = prompt(`此操作會刪除整個網域「${domain}」在 Cloudflare 的所有設定（DNS 紀錄、Page Rule、SSL 設定等），且無法復原。\n請輸入網域名稱以確認：`);
+    if (typed === null) return;
+    if (typed.trim() !== domain) {
+        alert('輸入的網域不相符，已取消');
+        return;
+    }
+    startJob('/api/zone/delete', { domain });
+}
+
+function onPageRuleActionChange() {
+    const actionType = document.getElementById('prActionType').value;
+    document.getElementById('prParamsForwarding').hidden = actionType !== 'forwarding_url';
+    document.getElementById('prParamsCacheLevel').hidden = actionType !== 'cache_level';
+    document.getElementById('prParamsSecurityLevel').hidden = actionType !== 'security_level';
+}
+
+function createPageRule() {
+    const entries = val('prEntries');
+    if (!entries) {
+        alert('請至少輸入一筆「網域,URL Pattern」');
+        return;
+    }
+    startJob('/api/pagerules/create', {
+        entries,
+        action_type: document.getElementById('prActionType').value,
+        priority: document.getElementById('prPriority').value,
+        status: document.getElementById('prStatus').value,
+        target_url: val('prTargetUrl'),
+        status_code: document.getElementById('prStatusCode').value,
+        cache_level: document.getElementById('prCacheLevel').value,
+        security_level: document.getElementById('prSecurityLevel').value,
+    });
+}
+
+let pageRulesCache = [];
+
+async function queryPageRules() {
+    const domain = val('prQueryDomain');
+    if (!domain) {
+        alert('請輸入網域');
+        return;
+    }
+
+    const body = new URLSearchParams();
+    body.append('domain', domain);
+    const resp = await fetch('/api/pagerules/list', { method: 'POST', body });
+    const data = await resp.json();
+    if (data.messages && data.messages.length > 0) {
+        appendLog(data.messages);
+    }
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    pageRulesCache = data.rules;
+    renderPageRulesTable();
+}
+
+function renderPageRulesTable() {
+    const table = document.getElementById('pageRulesTable');
+    const emptyHint = document.getElementById('pageRulesEmptyHint');
+    const actions = document.getElementById('pageRulesActions');
+    const tbody = document.getElementById('pageRulesTableBody');
+    tbody.innerHTML = '';
+
+    if (pageRulesCache.length === 0) {
+        table.hidden = true;
+        actions.hidden = true;
+        emptyHint.hidden = false;
+        return;
+    }
+    table.hidden = false;
+    actions.hidden = false;
+    emptyHint.hidden = true;
+
+    pageRulesCache.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+
+        const tdCheck = document.createElement('td');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'pagerule-checkbox';
+        cb.value = String(idx);
+        tdCheck.appendChild(cb);
+        tr.appendChild(tdCheck);
+
+        const tdPattern = document.createElement('td'); tdPattern.textContent = r.pattern; tr.appendChild(tdPattern);
+        const tdAction = document.createElement('td'); tdAction.textContent = r.action_desc; tr.appendChild(tdAction);
+        const tdPriority = document.createElement('td'); tdPriority.textContent = r.priority; tr.appendChild(tdPriority);
+        const tdStatus = document.createElement('td'); tdStatus.textContent = r.status === 'active' ? '啟用' : '停用'; tr.appendChild(tdStatus);
+
+        tbody.appendChild(tr);
+    });
+}
+
+function toggleAllPageRules(checked) {
+    document.querySelectorAll('.pagerule-checkbox').forEach(cb => cb.checked = checked);
+}
+
+function deletePageRulesBatch() {
+    const selected = Array.from(document.querySelectorAll('.pagerule-checkbox:checked'))
+        .map(cb => pageRulesCache[Number(cb.value)]);
+    if (selected.length === 0) {
+        alert('請至少勾選一筆要刪除的 Page Rule');
+        return;
+    }
+    if (!confirm(`確定要刪除這 ${selected.length} 筆 Page Rule 嗎？此動作無法復原。`)) return;
+
+    startJob('/api/pagerules/delete-batch', { rules: JSON.stringify(selected) });
+}
+
+let dnsRecordsCache = [];
+
+async function queryDnsRecords() {
+    const raw = val('delDomains');
+    if (!raw) {
+        alert('請輸入至少一個網域');
+        return;
+    }
+
+    const body = new URLSearchParams();
+    body.append('domains', raw);
+    const resp = await fetch('/api/dns/list', { method: 'POST', body });
+    const data = await resp.json();
+    if (data.messages && data.messages.length > 0) {
+        appendLog(data.messages);
+    }
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    dnsRecordsCache = data.records;
+    renderDnsRecordsTable();
+}
+
+function renderDnsRecordsTable() {
+    const table = document.getElementById('dnsRecordsTable');
+    const emptyHint = document.getElementById('dnsRecordsEmptyHint');
+    const actions = document.getElementById('dnsRecordsActions');
+    const tbody = document.getElementById('dnsRecordsTableBody');
+    tbody.innerHTML = '';
+
+    if (dnsRecordsCache.length === 0) {
+        table.hidden = true;
+        actions.hidden = true;
+        emptyHint.hidden = false;
+        return;
+    }
+    table.hidden = false;
+    actions.hidden = false;
+    emptyHint.hidden = true;
+
+    dnsRecordsCache.forEach((r, idx) => {
+        const tr = document.createElement('tr');
+
+        const tdCheck = document.createElement('td');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'dns-record-checkbox';
+        cb.value = String(idx);
+        tdCheck.appendChild(cb);
+        tr.appendChild(tdCheck);
+
+        const tdHost = document.createElement('td');
+        tdHost.textContent = r.hostname;
+        tr.appendChild(tdHost);
+
+        const tdType = document.createElement('td');
+        tdType.textContent = r.type;
+        tr.appendChild(tdType);
+
+        const tdContent = document.createElement('td');
+        tdContent.textContent = r.content;
+        tr.appendChild(tdContent);
+
+        const tdProxied = document.createElement('td');
+        tdProxied.textContent = r.proxied ? '是' : '否';
+        tr.appendChild(tdProxied);
+
+        const tdAccount = document.createElement('td');
+        tdAccount.textContent = r.account_name;
+        tr.appendChild(tdAccount);
+
+        tbody.appendChild(tr);
+    });
+}
+
+function toggleAllDnsRecords(checked) {
+    document.querySelectorAll('.dns-record-checkbox').forEach(cb => cb.checked = checked);
+}
+
+function deleteDnsRecordsBatch() {
+    const selected = Array.from(document.querySelectorAll('.dns-record-checkbox:checked'))
+        .map(cb => dnsRecordsCache[Number(cb.value)]);
+    if (selected.length === 0) {
+        alert('請至少勾選一筆要刪除的紀錄');
+        return;
+    }
+    if (!confirm(`確定要刪除這 ${selected.length} 筆 DNS 紀錄嗎？此動作無法復原。`)) return;
+
+    startJob('/api/dns/delete-batch', { records: JSON.stringify(selected) });
+}
+
+loadCertList();
+loadCertDownloadList();
+{% if is_admin %}
+loadUsers();
+loadCfAccounts();
+{% endif %}
+
+function buildBody(params) {
+    const body = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+        if (Array.isArray(value)) {
+            for (const v of value) body.append(key, v);
+        } else {
+            body.append(key, value);
+        }
+    }
+    return body;
+}
+
+async function startJob(url, params) {
+    const body = buildBody(params);
+    const resp = await fetch(url, { method: 'POST', body });
+    const data = await resp.json();
+    if (!data.ok) {
+        alert(data.message);
+        return;
+    }
+    document.getElementById('log').textContent = '';
+    offset = 0;
+    setButtonsDisabled(true);
+    document.getElementById('status').textContent = '執行中...';
+    if (polling) clearInterval(polling);
+    polling = setInterval(pollLogs, 800);
+}
+</script>
+</body>
+</html>

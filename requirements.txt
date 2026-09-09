@@ -1,0 +1,7 @@
+aiohttp
+flask
+dnspython
+tldextract
+acme
+cryptography
+psycopg2-binary
