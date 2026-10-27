@@ -28,6 +28,23 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # 開發用對外通道，預設不會啟動，只有 profile 是 dev 時才開：
+  #   docker compose --profile dev up -d
+  # NGROK_AUTHTOKEN 放在 .env（見 .env.example），不要寫進這個檔案。
+  # 注意：這會把 ops-tools 公開到網際網路，網址知道的人都連得到登入頁。
+  ngrok:
+    image: ngrok/ngrok:3
+    profiles: ["dev"]
+    command: ["http", "ops-tools:5000"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    ports:
+      # ngrok 的 inspector 畫面（可看到公開網址），同樣只綁本機
+      - "127.0.0.1:4040:4040"
+    depends_on:
+      - ops-tools
+    restart: unless-stopped
+
   ops-tools:
     build: .
     # 只綁宿主機的 127.0.0.1，維持「僅本機能連」的前提；不要改成 "5000:5000"
